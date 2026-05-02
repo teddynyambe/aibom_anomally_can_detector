@@ -1,0 +1,239 @@
+# AIBOM Knowledge Graph (Turtle / RDF 1.1)
+#
+# Demonstrator instance for the paper:
+#   "Enabling AI Bills of Materials Through Graph-Structured Metadata:
+#    A Model-Based Systems Engineering Approach"
+#   Nyambe, DiValentin, Daily - Colorado State University
+#
+# Triples are grouped under the metadata Interface (IF) that exposes
+# them. The aibom:exposedVia predicate ties every fact back to its
+# IF so the graph can be queried IF-by-IF. IF contracts are formally
+# defined in interfaces.yaml.
+
+@prefix aibom: <https://aibom.colostate.edu/ontology#> .
+@prefix : <https://aibom.colostate.edu/demo/can-detector#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ============================================================
+# System (the AI System block from the IBD)
+# ============================================================
+
+:CANAnomalyDetectorSystem a aibom:AISystem ;
+    rdfs:label "CAN Anomaly Detector (AIBOM Demonstrator)" ;
+    dcterms:created "2026-05-02T01:07:59Z"^^xsd:dateTime ;
+    aibom:hasComponent
+        :Data, :Training, :Registry, :Inference, :ToolCANBusReader .
+
+# IBD blocks (parts) and the metadata IF each block exposes
+:Data       a aibom:DataBlock      ; aibom:exposedVia :Data_IF .
+:Training   a aibom:TrainingBlock  ; aibom:exposedVia :Training_IF .
+:Registry   a aibom:RegistryBlock  ; aibom:exposedVia :Registry_IF .
+:Inference  a aibom:InferenceBlock ; aibom:exposedVia :Inference_IF .
+:ToolCANBusReader a aibom:ToolBlock ; aibom:exposedVia :Tool_IF .
+
+# IBD ports between blocks (matches the p1/p2 connectors in the diagram)
+:Data       aibom:port_p1_to :Training .
+:Training   aibom:port_p2_to :Registry .
+:Registry   aibom:port_p2_to :Inference .
+:Inference  aibom:port_p2_to :ToolCANBusReader .
+
+# Interface declarations (contract files in interfaces.yaml)
+:Data_IF      a aibom:Interface ; aibom:contractFile <interfaces.yaml#DataIF> .
+:Training_IF  a aibom:Interface ; aibom:contractFile <interfaces.yaml#TrainingIF> .
+:Registry_IF  a aibom:Interface ; aibom:contractFile <interfaces.yaml#RegistryIF> .
+:Inference_IF a aibom:Interface ; aibom:contractFile <interfaces.yaml#InferenceIF> .
+:Tool_IF      a aibom:Interface ; aibom:contractFile <interfaces.yaml#ToolIF> .
+
+# ============================================================
+# Data IF - collection, sampling, cleaning, partitioning
+# ============================================================
+
+# Collection: training and test data were both synthesized via ChatGPT.
+# This is recorded as provenance, not hidden.
+
+:ChatGPTAgent a prov:SoftwareAgent ;
+    rdfs:label "ChatGPT (LLM used as synthetic-data generator)" ;
+    aibom:vendor "OpenAI" ;
+    aibom:exposedVia :Data_IF .
+
+:DataCollection_v1 a aibom:DataCollectionActivity, prov:Activity ;
+    rdfs:label "Synthesize labelled J1939 Address Claim frames via LLM" ;
+    prov:wasAssociatedWith :ChatGPTAgent ;
+    prov:startedAtTime "2026-05-01T00:00:00Z"^^xsd:dateTime ;
+    aibom:method "synthetic-LLM-generation" ;
+    aibom:domainConstraint "SAE J1939, PGN 0xEEFF Address Claim" ;
+    aibom:promptSummary
+        "Generate timestamp,can_id,data,label rows: well-formed NAMEs labelled normal; all-zero NAMEs labelled anomaly." ;
+    aibom:exposedVia :Data_IF .
+
+:Sampling_v1 a aibom:SamplingActivity, prov:Activity ;
+    prov:wasInformedBy :DataCollection_v1 ;
+    aibom:strategy
+        "purposive sampling: cover both classes for one PGN; vary source addresses in the test split to probe generalization" ;
+    aibom:targetClassBalanceTrain "normal=2, anomaly=4" ;
+    aibom:targetClassBalanceTest  "normal=5, anomaly=5" ;
+    aibom:exposedVia :Data_IF .
+
+# Cleaning: the raw LLM output had whitespace and inconsistent
+# byte separators (see the screenshot in the paper). The transforms
+# below normalized it into the canonical CSV.
+:Cleaning_v1 a aibom:CleaningActivity, prov:Activity ;
+    prov:wasInformedBy :Sampling_v1 ;
+    aibom:transform :T_StripWhitespace, :T_ConcatenatePayloadBytes,
+                    :T_NormalizeTimestamp, :T_EnforceColumnOrder ;
+    aibom:exposedVia :Data_IF .
+
+:T_StripWhitespace a aibom:DataTransform ;
+    rdfs:label "Strip stray whitespace inside each field" ;
+    aibom:exposedVia :Data_IF .
+:T_ConcatenatePayloadBytes a aibom:DataTransform ;
+    rdfs:label "Join space-separated bytes into one 16-character hex string" ;
+    aibom:exposedVia :Data_IF .
+:T_NormalizeTimestamp a aibom:DataTransform ;
+    rdfs:label "Drop redundant leading zero prefix from timestamp values" ;
+    aibom:exposedVia :Data_IF .
+:T_EnforceColumnOrder a aibom:DataTransform ;
+    rdfs:label "Enforce canonical column order: timestamp,can_id,data,label" ;
+    aibom:exposedVia :Data_IF .
+
+:Partition_v1 a aibom:PartitionActivity, prov:Activity ;
+    prov:wasInformedBy :Cleaning_v1 ;
+    aibom:scheme "train/test holdout (no validation split)" ;
+    aibom:produces :TrainSplit_v1, :TestSplit_v1 ;
+    aibom:exposedVia :Data_IF .
+
+:TrainSplit_v1 a aibom:DatasetSplit ;
+    aibom:role "train" ;
+    aibom:file "data.csv" ;
+    aibom:rowCount 6 ;
+    aibom:labelCounts "normal=2, anomaly=4" ;
+    aibom:contentHash
+        "sha256:a11e007bfbc635e77c7cd71e1dbc3d3a5a6dd185ce19a4def7046f2a26e93f22" ;
+    aibom:exposedVia :Data_IF .
+
+:TestSplit_v1 a aibom:DatasetSplit ;
+    aibom:role "test" ;
+    aibom:file "test_data.csv" ;
+    aibom:rowCount 10 ;
+    aibom:labelCounts "normal=5, anomaly=5" ;
+    aibom:contentHash
+        "sha256:5da72b18fce8c22091eec0f2a1c547811a5246275c369aa3265b81d24bab303e" ;
+    aibom:exposedVia :Data_IF .
+
+:Dataset_v1 a aibom:Dataset ;
+    rdfs:label "CAN Address Claim Anomaly Dataset v1" ;
+    prov:wasGeneratedBy :Partition_v1 ;
+    aibom:hasSplit :TrainSplit_v1, :TestSplit_v1 ;
+    aibom:schema
+        "(timestamp:float64, can_id:hex8, data:hex16, label:{normal,anomaly})" ;
+    aibom:domain "SAE J1939 Address Claim, PGN 0xEEFF" ;
+    aibom:origin "synthetic" ;
+    aibom:syntheticGenerator :ChatGPTAgent ;
+    aibom:exposedVia :Data_IF .
+
+# ============================================================
+# Training IF - feature extraction, training run, environment
+# ============================================================
+
+:FeatureExtractor_v1 a aibom:FeatureExtractor ;
+    rdfs:label "extract_features (notebook cell)" ;
+    aibom:definedIn "train_model.ipynb#extract_features" ;
+    aibom:inputSchema "(timestamp, can_id_hex, data_hex)" ;
+    aibom:outputSchema
+        "(source_address: int [0..255], is_zero_name: int [0|1], timestamp: float)" ;
+    aibom:rule_source_address "low byte of int(can_id, 16)" ;
+    aibom:rule_is_zero_name "1 iff data == '0000000000000000' else 0" ;
+    aibom:exposedVia :Training_IF .
+
+:TrainingPipeline a aibom:Pipeline ;
+    aibom:file "train_model.ipynb" ;
+    aibom:contentHash
+        "sha256:41af57734be33e4fc969699e57dc9e1a65e15c5c59e3858e8eb6b4d77e7a348d" ;
+    aibom:exposedVia :Training_IF .
+
+:TrainingRun_v1 a aibom:TrainingRun, prov:Activity ;
+    prov:used :TrainSplit_v1 ;
+    prov:wasAssociatedWith :TrainingPipeline ;
+    aibom:featureExtractor :FeatureExtractor_v1 ;
+    aibom:algorithm "sklearn.ensemble.RandomForestClassifier" ;
+    aibom:hyperparameters
+        "scikit-learn defaults (n_estimators=100, max_depth=None, criterion=gini, random_state=None)" ;
+    aibom:environmentPython "3.11.5" ;
+    aibom:librarySklearn "1.8.0" ;
+    aibom:libraryPandas "3.0.2" ;
+    aibom:libraryJoblib "1.5.3" ;
+    aibom:produces :Model_v1 ;
+    aibom:limitation
+        "no validation split; random_state not pinned; results non-deterministic" ;
+    aibom:exposedVia :Training_IF .
+
+# ============================================================
+# Registry IF - persisted model and lineage
+# ============================================================
+
+:Model_v1 a aibom:Model ;
+    rdfs:label "CAN Address Claim Anomaly RandomForest v1" ;
+    aibom:format "joblib" ;
+    aibom:file "model.joblib" ;
+    aibom:contentHash
+        "sha256:4cab0e3cda21960085955f26b09fb32c7dd6f173dcc2f14b968e2d1403aaa2d7" ;
+    prov:wasGeneratedBy :TrainingRun_v1 ;
+    aibom:lineageDataset :Dataset_v1 ;
+    aibom:algorithm "sklearn.ensemble.RandomForestClassifier" ;
+    aibom:intendedUse
+        "demonstrator for AIBOM lifecycle metadata harvesting" ;
+    aibom:outOfScope "production J1939 IDS deployment" ;
+    aibom:signed false ;
+    aibom:exposedVia :Registry_IF .
+
+# ============================================================
+# Inference IF - runtime contract of the deployed model
+# ============================================================
+
+:InferenceService_v1 a aibom:InferenceService ;
+    rdfs:label "run_detector.py SocketCAN listener" ;
+    aibom:script "run_detector.py" ;
+    aibom:contentHash
+        "sha256:c71b3ad86846e4149fda88ad299437417f8fc0b572a9f6224b2f11cf80a5de39" ;
+    aibom:loadsModel :Model_v1 ;
+    aibom:inputContract
+        "(source_address, is_zero_name, timestamp=0)  # timestamp fixed at inference" ;
+    aibom:outputLabelSpace "{0: normal, 1: anomaly}" ;
+    aibom:bus "socketcan/can0 @ 250 kbit/s" ;
+    aibom:targetPlatform "Raspberry Pi + CAN HAT (Linux SocketCAN)" ;
+    aibom:exposedVia :Inference_IF .
+
+# ============================================================
+# Tool IF - tools invoked from inside the inference loop
+# ============================================================
+
+:ToolCANBusReader a aibom:ReadTool ;
+    rdfs:label "python-can SocketCAN bus listener" ;
+    aibom:type "Read" ;
+    aibom:library "python-can" ;
+    aibom:invokedBy :InferenceService_v1 ;
+    aibom:returnSchema "(arbitration_id: u32, data: bytes[8])" ;
+    aibom:sideEffects "none (read-only consumption of bus frames)" ;
+    aibom:exposedVia :Tool_IF .
+
+# ============================================================
+# Threat anchors (from the paper's threat model)
+# ============================================================
+# These nodes connect the AIBOM to the security-reasoning section of
+# the paper. They are not vulnerabilities by themselves; they mark
+# graph locations where each threat class would attach.
+
+:Threat_Evasion_NullNameSpoof a aibom:EvasionThreat ;
+    rdfs:label "Inference-time perturbation flipping is_zero_name" ;
+    aibom:targets :InferenceService_v1 ;
+    aibom:via "craft frame with non-zero NAME bytes that still represents a NULL claim semantically" ;
+    aibom:exposedVia :Inference_IF .
+
+:Threat_Poisoning_LabelFlip a aibom:PoisoningThreat ;
+    rdfs:label "Training-time label flip on a NULL-NAME row" ;
+    aibom:targets :TrainSplit_v1 ;
+    aibom:via "relabel an anomaly row as normal so the model learns NULL NAME is benign" ;
+    aibom:exposedVia :Data_IF .

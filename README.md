@@ -39,11 +39,15 @@ The classifier is intentionally simple: enough to exercise data, training, regis
 
 | Path | Purpose |
 | --- | --- |
-| `data.csv` | Labelled training samples — `timestamp, can_id, data, label`. |
+| `data.csv` | Labelled training split — `timestamp, can_id, data, label`. |
+| `test_data.csv` | Labelled test split with unseen source addresses. |
 | `train_model.ipynb` | Feature extraction + `RandomForestClassifier` training; emits `model.joblib`. |
 | `model.joblib` | Pre-trained model committed for convenience. |
 | `run_detector.py` | Loads `model.joblib`, opens `socketcan` on `can0`, predicts per frame. |
 | `requirements.txt` | Python runtime dependencies. |
+| `aibom/interfaces.yaml` | Formal contracts for each metadata Interface (Data IF, Training IF, Registry IF, Inference IF, Tool IF) shown in the system IBD. |
+| `aibom/aibom.ttl` | RDF/Turtle knowledge graph for this demonstrator. Triples are grouped by the IF that exposes them via the `aibom:exposedVia` predicate. |
+| `aibom/aibom.cdx.json` | CycloneDX 1.6 ML-BOM rendered from the same graph — the standards-aligned AIBOM artifact. |
 
 ### Feature-vector contract
 
@@ -127,6 +131,18 @@ ANOMALY detected: 18EEFF00#0000000000000000
 ```
 
 `cansend` here plays the role of a *write tool* in the paper's tools lane — a real-world side effect on the bus.
+
+## The AIBOM artifacts in this repo
+
+The `aibom/` directory contains a worked example of the framework's output for this demonstrator:
+
+- **`interfaces.yaml`** — formal contract for each metadata Interface in the system IBD. Each IF is the metadata-port of one block (Data, Training, Registry, Inference, Tool) and lists the required, optional, and conditional properties that block must expose. This is the schema; the graph is the instance.
+- **`aibom.ttl`** — the knowledge graph for this demonstrator in Turtle/RDF. Every fact carries an `aibom:exposedVia` triple linking it back to the IF that surfaces it, so a SPARQL query like *"show me everything Data IF exposes"* is one line. Provenance is modelled with W3C PROV-O (`prov:Activity`, `prov:wasGeneratedBy`, `prov:wasInformedBy`).
+- **`aibom.cdx.json`** — the same graph rendered as a CycloneDX 1.6 ML-BOM, with `data`, `application`, `machine-learning-model`, and `library` components, a `modelCard` block, and `dependencies`/`compositions` edges. This is the artifact a downstream supply-chain tool would ingest.
+
+The Turtle graph is the source of truth: hashes, library versions, training environment, sampling strategy, cleaning transforms, partition, model lineage, inference contract, and tool side-effect classification all live there. The CycloneDX file is a projection of that graph into the standards-aligned format. If you regenerate `model.joblib`, both files need to be regenerated against the new hash.
+
+The graph also illustrates honest provenance: the labelled dataset was **synthesized via ChatGPT** rather than collected from a real bus, and that fact is recorded as a `prov:SoftwareAgent` linked to the `DataCollection` activity. The framework treats synthetic-LLM-generated data as a first-class provenance class, not a footnote.
 
 ## Why this is a useful AIBOM test case
 

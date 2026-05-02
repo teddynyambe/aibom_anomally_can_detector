@@ -1,0 +1,132 @@
+# Formal contracts for the metadata Interfaces (IF) shown in the
+# AI System internal block diagram (IBD). Each IF is the metadata-port
+# of one block and specifies which lifecycle properties that block must
+# expose so the AIBOM generator can populate the knowledge graph.
+#
+# The block <-> IF mapping mirrors the IBD:
+#   data       : Data       <- Data IF
+#   training   : Training   <- Training IF
+#   registry   : Registry   <- Registry IF
+#   inference  : Inference  <- Inference IF
+#   tool       : Tool [1..*]<- Tool IF
+#
+# Required properties MUST be present on every instance exposed through
+# the IF. Optional properties SHOULD be present when known. Conditional
+# properties become required when the gating condition holds.
+
+DataIF:
+  exposes_block: aibom:DataBlock
+  port: meta-data-data
+  intent: >
+    Surfaces all data-lifecycle metadata: collection method, sampling
+    strategy, cleaning transforms, partitioning, and per-split
+    fingerprints. Every fact populated under DataIF carries the
+    aibom:exposedVia <Data_IF> triple in the graph.
+  required_properties:
+    - id
+    - origin                  # enum: observed | synthetic | mixed
+    - collection.method
+    - collection.agent        # human, sensor model, LLM identifier, etc.
+    - collection.startedAtTime
+    - collection.domainConstraint
+    - sampling.strategy
+    - sampling.targetClassBalance
+    - cleaning.transforms     # ordered list of named transforms
+    - partition.scheme        # e.g. "train/test holdout", "k-fold"
+    - partition.splits:
+        item:
+          - role              # enum: train | validation | test
+          - file
+          - rowCount
+          - labelCounts
+          - contentHash       # sha256 of the split file
+    - schema                  # column names + types
+  optional_properties:
+    - license
+    - sensitivePII            # bool
+    - retentionPolicy
+    - syntheticGenerator      # if origin == synthetic | mixed
+
+TrainingIF:
+  exposes_block: aibom:TrainingBlock
+  port: meta-data-training
+  intent: >
+    Surfaces what was trained, on what, with what code, under what
+    environment. The minimum required for replay and threat reasoning.
+  required_properties:
+    - id
+    - inputs.dataset           # ref to Dataset@contentHash
+    - inputs.featureExtractor.definedIn
+    - inputs.featureExtractor.inputSchema
+    - inputs.featureExtractor.outputSchema
+    - algorithm                # fully-qualified class
+    - hyperparameters          # map; explicitly note "defaults" when unset
+    - environment.python
+    - environment.libraries    # map of name -> version
+    - notebook.contentHash
+    - outputs.model            # ref to Model@contentHash
+  optional_properties:
+    - validation.metrics
+    - randomSeed
+    - hardware
+    - durationSeconds
+
+RegistryIF:
+  exposes_block: aibom:RegistryBlock
+  port: meta-data-registry
+  intent: >
+    Surfaces persisted, versioned model artifacts and their lineage
+    edges back to dataset and training run. The bridge between the
+    offline (training) and online (inference) lanes.
+  required_properties:
+    - id
+    - format                   # joblib, ONNX, SavedModel, GGUF, ...
+    - file
+    - contentHash
+    - lineage.trainingRun      # ref to TrainingRun@id
+    - lineage.dataset          # ref to Dataset@contentHash
+  optional_properties:
+    - intendedUse
+    - outOfScope
+    - card.uri                 # external model card
+    - signed                   # bool
+    - signingIdentity
+
+InferenceIF:
+  exposes_block: aibom:InferenceBlock
+  port: meta-data-inference
+  intent: >
+    Surfaces the runtime contract of the deployed model: input it
+    expects, output it produces, and bus or service it is bound to.
+  required_properties:
+    - id
+    - script.contentHash
+    - loadsModel               # ref to Model@contentHash
+    - inputContract.featureVector
+    - outputContract.labelSpace
+    - bus                      # transport: socketcan/can0, gRPC, HTTP, ...
+  optional_properties:
+    - hardware
+    - osVersion
+    - kernelCANVersion
+    - alertingSink
+
+ToolIF:
+  exposes_block: aibom:ToolBlock
+  port: meta-data-tool
+  intent: >
+    Surfaces tools invoked from inside the inference loop. Each tool
+    is classified as Read (no real-world side effect) or Write
+    (real-world side effect; must be authorized). Tool IF is the only
+    place where cyber-physical actuation surfaces in the graph.
+  required_properties:
+    - id
+    - type                     # enum: Read | Write
+    - library
+    - invokedBy                # ref to InferenceService@id
+    - returnSchema
+  conditional_properties:
+    when_type_is_Write:
+      - target                 # what the write touches (bus, actuator, API)
+      - sideEffectScope        # bounded description of effect
+      - authorizationModel     # who/what may approve invocation

@@ -1,0 +1,229 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:5e2c3a8e-aibom-can-anomaly-demo-v1",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-05-02T01:07:59Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "name": "aibom-csu-graph-generator",
+          "version": "demo",
+          "description": "Graph-based AIBOM generator described in Nyambe, DiValentin, Daily (CSU)"
+        }
+      ]
+    },
+    "authors": [
+      { "name": "Teddy Nyambe",     "email": "Teddy.Nyambe@colostate.edu" },
+      { "name": "Maria DiValentin", "email": "maria.divalentin@colostate.edu" },
+      { "name": "Jeremy Daily",     "email": "Jeremy.Daily@colostate.edu" }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "system:can-anomaly-detector",
+      "name": "CAN Anomaly Detector (AIBOM Demonstrator)",
+      "version": "1.0.0",
+      "description": "AI application deployed over an automotive CAN bus, used as the demonstrator for the graph-structured AIBOM framework."
+    },
+    "properties": [
+      {
+        "name": "aibom:graphSource",
+        "value": "aibom/aibom.ttl"
+      },
+      {
+        "name": "aibom:interfaceContracts",
+        "value": "aibom/interfaces.yaml"
+      }
+    ]
+  },
+
+  "components": [
+    {
+      "type": "data",
+      "bom-ref": "data:dataset-v1",
+      "name": "CAN Address Claim Anomaly Dataset",
+      "version": "1",
+      "description": "Synthetic labelled J1939 Address Claim frames (PGN 0xEEFF). Train and test splits.",
+      "properties": [
+        { "name": "aibom:exposedVia",        "value": "Data_IF" },
+        { "name": "aibom:origin",            "value": "synthetic" },
+        { "name": "aibom:syntheticGenerator","value": "ChatGPT (OpenAI)" },
+        { "name": "aibom:domain",            "value": "SAE J1939 Address Claim, PGN 0xEEFF" },
+        { "name": "aibom:schema",            "value": "timestamp:float64, can_id:hex8, data:hex16, label:{normal,anomaly}" },
+        { "name": "aibom:samplingStrategy",  "value": "purposive: cover both classes for one PGN; vary source addresses in test split" },
+        { "name": "aibom:cleaning.transforms","value": "StripWhitespace; ConcatenatePayloadBytes; NormalizeTimestamp; EnforceColumnOrder" },
+        { "name": "aibom:partition.scheme",  "value": "train/test holdout (no validation)" }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "data:train-split-v1",
+      "name": "data.csv (training split)",
+      "version": "1",
+      "hashes": [
+        { "alg": "SHA-256", "content": "a11e007bfbc635e77c7cd71e1dbc3d3a5a6dd185ce19a4def7046f2a26e93f22" }
+      ],
+      "properties": [
+        { "name": "aibom:exposedVia",  "value": "Data_IF" },
+        { "name": "aibom:role",        "value": "train" },
+        { "name": "aibom:rowCount",    "value": "6" },
+        { "name": "aibom:labelCounts", "value": "normal=2, anomaly=4" }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "data:test-split-v1",
+      "name": "test_data.csv (test split)",
+      "version": "1",
+      "hashes": [
+        { "alg": "SHA-256", "content": "5da72b18fce8c22091eec0f2a1c547811a5246275c369aa3265b81d24bab303e" }
+      ],
+      "properties": [
+        { "name": "aibom:exposedVia",  "value": "Data_IF" },
+        { "name": "aibom:role",        "value": "test" },
+        { "name": "aibom:rowCount",    "value": "10" },
+        { "name": "aibom:labelCounts", "value": "normal=5, anomaly=5" }
+      ]
+    },
+
+    {
+      "type": "application",
+      "bom-ref": "training:notebook-v1",
+      "name": "train_model.ipynb",
+      "version": "1",
+      "description": "Training pipeline: feature extraction + RandomForest fit + model serialization.",
+      "hashes": [
+        { "alg": "SHA-256", "content": "41af57734be33e4fc969699e57dc9e1a65e15c5c59e3858e8eb6b4d77e7a348d" }
+      ],
+      "properties": [
+        { "name": "aibom:exposedVia",        "value": "Training_IF" },
+        { "name": "aibom:algorithm",         "value": "sklearn.ensemble.RandomForestClassifier" },
+        { "name": "aibom:hyperparameters",   "value": "sklearn defaults (n_estimators=100, max_depth=None, criterion=gini, random_state=None)" },
+        { "name": "aibom:featureExtractor",  "value": "extract_features: source_address=can_id&0xFF; is_zero_name=int(data=='0000000000000000'); timestamp=row.timestamp" },
+        { "name": "aibom:env.python",        "value": "3.11.5" },
+        { "name": "aibom:lib.scikit-learn",  "value": "1.8.0" },
+        { "name": "aibom:lib.pandas",        "value": "3.0.2" },
+        { "name": "aibom:lib.joblib",        "value": "1.5.3" },
+        { "name": "aibom:limitation",        "value": "no validation split; random_state not pinned; results non-deterministic" }
+      ]
+    },
+
+    {
+      "type": "machine-learning-model",
+      "bom-ref": "model:rf-can-anomaly-v1",
+      "name": "CAN Address Claim Anomaly RandomForest",
+      "version": "1",
+      "description": "Binary classifier over (source_address, is_zero_name, timestamp). Output: 0=normal, 1=anomaly.",
+      "hashes": [
+        { "alg": "SHA-256", "content": "4cab0e3cda21960085955f26b09fb32c7dd6f173dcc2f14b968e2d1403aaa2d7" }
+      ],
+      "modelCard": {
+        "modelParameters": {
+          "approach": { "type": "supervised" },
+          "task": "classification",
+          "architectureFamily": "ensemble-tree",
+          "modelArchitecture": "RandomForestClassifier",
+          "datasets": [
+            { "ref": "data:train-split-v1" }
+          ],
+          "inputs":  [ { "format": "feature-vector(source_address:int, is_zero_name:int, timestamp:float)" } ],
+          "outputs": [ { "format": "class-label{0,1}" } ]
+        },
+        "considerations": {
+          "useCases":          [ "AIBOM-lifecycle metadata harvesting demonstrator" ],
+          "technicalLimitations": [
+            "trained on 6 synthetic rows of one PGN (0xEEFF)",
+            "timestamp feature fixed to 0 at inference",
+            "random_state not pinned; non-deterministic across retrains"
+          ],
+          "ethicalConsiderations": [
+            { "name": "scope-creep", "description": "Must not be deployed as a production J1939 IDS." }
+          ]
+        }
+      },
+      "properties": [
+        { "name": "aibom:exposedVia", "value": "Registry_IF" },
+        { "name": "aibom:format",     "value": "joblib" }
+      ]
+    },
+
+    {
+      "type": "application",
+      "bom-ref": "inference:run-detector-v1",
+      "name": "run_detector.py",
+      "version": "1",
+      "description": "SocketCAN listener that loads the registered model and emits per-frame OK/ANOMALY decisions.",
+      "hashes": [
+        { "alg": "SHA-256", "content": "c71b3ad86846e4149fda88ad299437417f8fc0b572a9f6224b2f11cf80a5de39" }
+      ],
+      "properties": [
+        { "name": "aibom:exposedVia",       "value": "Inference_IF" },
+        { "name": "aibom:loadsModel",       "value": "model:rf-can-anomaly-v1" },
+        { "name": "aibom:inputContract",    "value": "(source_address, is_zero_name, timestamp=0)" },
+        { "name": "aibom:outputLabelSpace", "value": "{0:normal, 1:anomaly}" },
+        { "name": "aibom:bus",              "value": "socketcan/can0 @ 250 kbit/s" },
+        { "name": "aibom:targetPlatform",   "value": "Raspberry Pi + CAN HAT (Linux SocketCAN)" }
+      ]
+    },
+
+    {
+      "type": "library",
+      "bom-ref": "tool:python-can-bus-reader",
+      "name": "python-can SocketCAN bus listener",
+      "version": "runtime",
+      "description": "Read tool exposed to the inference loop; consumes raw CAN frames from can0.",
+      "properties": [
+        { "name": "aibom:exposedVia", "value": "Tool_IF" },
+        { "name": "aibom:type",       "value": "Read" },
+        { "name": "aibom:library",    "value": "python-can" },
+        { "name": "aibom:returnSchema","value": "(arbitration_id:u32, data:bytes[8])" },
+        { "name": "aibom:sideEffects","value": "none" }
+      ]
+    }
+  ],
+
+  "dependencies": [
+    {
+      "ref": "system:can-anomaly-detector",
+      "dependsOn": [
+        "data:dataset-v1",
+        "training:notebook-v1",
+        "model:rf-can-anomaly-v1",
+        "inference:run-detector-v1",
+        "tool:python-can-bus-reader"
+      ]
+    },
+    {
+      "ref": "data:dataset-v1",
+      "dependsOn": [ "data:train-split-v1", "data:test-split-v1" ]
+    },
+    {
+      "ref": "training:notebook-v1",
+      "dependsOn": [ "data:train-split-v1" ]
+    },
+    {
+      "ref": "model:rf-can-anomaly-v1",
+      "dependsOn": [ "training:notebook-v1", "data:train-split-v1" ]
+    },
+    {
+      "ref": "inference:run-detector-v1",
+      "dependsOn": [ "model:rf-can-anomaly-v1", "tool:python-can-bus-reader" ]
+    }
+  ],
+
+  "compositions": [
+    {
+      "aggregate": "complete",
+      "assemblies": [ "system:can-anomaly-detector" ],
+      "dependencies": [
+        "data:dataset-v1",
+        "training:notebook-v1",
+        "model:rf-can-anomaly-v1",
+        "inference:run-detector-v1",
+        "tool:python-can-bus-reader"
+      ]
+    }
+  ]
+}
