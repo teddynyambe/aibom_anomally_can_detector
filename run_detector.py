@@ -66,7 +66,7 @@ for msg in bus:
 
     if prediction[0] == 1:
         print(
-            f"🚨 ADDRESS-CLAIM ANOMALY: SA=0x{source_address:02X} {can_id:08X}#{data}")
+            f"\033[91mADDRESS-CLAIM ANOMALY: SA=0x{source_address:02X} {can_id:08X}#{data}\033[0m")
     else:
         print(
             f"OK address claim: SA=0x{source_address:02X} {can_id:08X}#{data}")
