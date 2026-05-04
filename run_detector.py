@@ -32,7 +32,16 @@ def build_feature_frame(source_address: int, is_zero_name: int, timestamp: float
 
 model = joblib.load("model.joblib")
 
-bus = can.Bus(interface="socketcan", channel="can0")
+# bus = can.Bus(interface="socketcan", channel="can0")
+bus = can.Bus(
+
+    interface="socketcan",
+
+    channel="can0",
+
+    receive_own_messages=True
+
+)
 
 print("Listening on CAN...")
 print("Only PGN 0x00EE00 Address Claimed messages will be evaluated. Other CAN traffic is ignored.")
@@ -46,7 +55,8 @@ for msg in bus:
     # Ignore unrelated CAN/J1939 traffic. Without this filter, the model will
     # try to classify every frame on the bus as an address-claim event.
     if pgn != ADDRESS_CLAIM_PGN:
-        print(f"IGNORED non-address-claim: PGN=0x{pgn:06X} {can_id:08X}#{data}")
+        print(
+            f"IGNORED non-address-claim: PGN=0x{pgn:06X} {can_id:08X}#{data}")
         continue
 
     is_zero_name = 1 if data == "0000000000000000" else 0
@@ -55,6 +65,8 @@ for msg in bus:
     prediction = model.predict(features)
 
     if prediction[0] == 1:
-        print(f"🚨 ADDRESS-CLAIM ANOMALY: SA=0x{source_address:02X} {can_id:08X}#{data}")
+        print(
+            f"🚨 ADDRESS-CLAIM ANOMALY: SA=0x{source_address:02X} {can_id:08X}#{data}")
     else:
-        print(f"OK address claim: SA=0x{source_address:02X} {can_id:08X}#{data}")
+        print(
+            f"OK address claim: SA=0x{source_address:02X} {can_id:08X}#{data}")
